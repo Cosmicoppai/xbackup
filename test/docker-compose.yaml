@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: test
+    volumes:
+      - ./var/lib/mysql:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+
+  sysbench:
+    image: severalnines/sysbench
+    depends_on:
+      - mysql
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DB: test
+      MYSQL_USER: root
+      MYSQL_PASSWORD: password
+      SYSBENCH_TABLE_SIZE: 1000000
+      SYSBENCH_TABLES: 20
+      SYSBENCH_THREADS: 10
+      SYSBENCH_TIME: 60
+    entrypoint: >
+      sh -c "
+        sleep 20 &&
+        sysbench /usr/share/sysbench/oltp_read_write.lua --threads=$$SYSBENCH_THREADS --mysql-host=$$MYSQL_HOST --mysql-db=$$MYSQL_DB --mysql-user=$$MYSQL_USER --mysql-password=$$MYSQL_PASSWORD --tables=$$SYSBENCH_TABLES --table-size=$$SYSBENCH_TABLE_SIZE prepare &&
+        sysbench /usr/share/sysbench/oltp_read_write.lua --threads=$$SYSBENCH_THREADS --mysql-host=$$MYSQL_HOST --mysql-db=$$MYSQL_DB --mysql-user=$$MYSQL_USER --mysql-password=$$MYSQL_PASSWORD --tables=$$SYSBENCH_TABLES --table-size=$$SYSBENCH_TABLE_SIZE --time=$$SYSBENCH_TIME run &&
+        echo 'Sysbench completed.'
+      "
+    restart: on-failure
+

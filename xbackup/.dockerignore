@@ -1,0 +1,4 @@
+.gitignore
+.dockerignore
+Readme.MD
+.test.sh

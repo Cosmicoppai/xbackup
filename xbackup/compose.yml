@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  percona-xtrabackup:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./xbackup:/xbackup
+      - ../test/var/lib/mysql:/var/lib/mysql
+    restart: on-failure
+

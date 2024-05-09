@@ -15,8 +15,8 @@ LATEST_BACKUP_TXT="latest_backup.txt"
 total_mem_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 # 40% of total memory for xtrabackup
 mem_for_xtrabackup_kb=$((total_mem_kb * 40 / 100))
-# KB to MB for xtrabackup usage
-MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb / 1024))
+# KB to bytes for xtrabackup usage
+MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb * 1024))
 
 echo "Starting backup with $CPUS CPU cores and $MEM_FOR_XBACKUP MB of memory allocated."
 
@@ -56,6 +56,7 @@ prepare_and_finalize() {
     if [[ "$curr_hr" != "00" ]]; then
       if [[ "$curr_hr" == "01" ]]; then
         # if it's first inc backup, run the full backup with apply-log-only
+        echo "preparing base backup with --apply-log-only"
         xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --parallel="$CPUS" --use-memory=$MEM_FOR_XBACKUP --strict
       else
         # apply logs of prev hour
@@ -66,7 +67,7 @@ prepare_and_finalize() {
 
         if [ $? -eq 0 ]; then
             echo "Applied log of prev hour, deleting incremental dir of prev hour $prev_hr"
-#            rm -rf "$prev_inc_dir"
+            rm -rf "$prev_inc_dir"
         fi
       fi
 
@@ -76,16 +77,24 @@ prepare_and_finalize() {
       fi
     fi
 
-    _final_dir="$FINAL_DIR/$curr_hr"
-    mkdir -p "$_final_dir"
+    _final_dir="${FINAL_DIR}/${curr_hr}"
+    mkdir -p "${_final_dir}"
+    local _inc_final_dir
 
-    # copy the data to final dir, so the further logs can be applied on og full backup
-    cp -a "$TARGET_DIR/00/." "$_final_dir/"
+    # copy the base backup data to final dir, so the further logs can be applied on og full backup
+    echo "Copying the base backup data to $_final_dir"
+    cp -a "${TARGET_DIR}/00/." "${_final_dir}/"
 
     # prepare accordingly for 1st and the rest hour
     if [[ "$curr_hr" != "00" ]]; then
+      echo "Copying current incremental backup"
+      _inc_final_dir="${FINAL_DIR}/${curr_hr}_inc"
+      mkdir -p "${_inc_final_dir}"
+      cp -a "${TARGET_DIR}/${curr_hr}/." "${_inc_final_dir}/" # as we'll need this inc backup to apply logs during next hour preparation
+
       # applying curr incremental backup
-      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="$TARGET_DIR/$curr_hr" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
+      echo "applying current incremental logs"
+      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="${_inc_final_dir}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
     else
       xtrabackup --prepare --target-dir="$_final_dir" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
     fi
@@ -99,8 +108,7 @@ prepare_and_finalize() {
 
     if [[ "$curr_hr" != "00" ]]; then
     echo "pushing incremental backup of $curr_hr"
-    cp -a "$TARGET_DIR/${curr_hr}/." "$_final_dir/"  # as we'll need this inc backup to apply logs during next hour preparation
-    push_to_s3 "${curr_hr}_inc" "$_final_dir"  # curr_hr_inc /xbackup/final/ (inc backup copy)
+    push_to_s3 "${curr_hr}_inc" "${_inc_final_dir}"  # curr_hr_inc /xbackup/final/ (inc backup copy)
     fi
 
     if [ $? -eq 0 ]; then

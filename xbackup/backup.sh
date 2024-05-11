@@ -20,11 +20,31 @@ MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb * 1024))
 
 echo "Starting backup with $CPUS CPU cores and $MEM_FOR_XBACKUP MB of memory allocated."
 
+
+create_dir() {
+  local curr_hr=$1
+
+  local backup_dir="$TARGET_DIR/${curr_hr}"
+  if [ -d "$backup_dir" ]; then
+    echo "removing old backup of $curr_hr"
+    rm -rf "${backup_dir:?backup directory path is unset or empty}/*"
+  else
+    echo "creating temp dir for $curr_hr"
+    mkdir -p "$backup_dir"
+  fi
+
+}
+
 full_backup() {
     local curr_hr=$1
-    echo "Performing full backup... @ $curr_hr"
-    mkdir -p "$TARGET_DIR/${curr_hr}"
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir=${TARGET_DIR}/"${curr_hr}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+
+    create_dir "$curr_hr"
+    if [ $? -ne 0 ]; then
+      echo "Full to create directories of $curr_hr"
+      return 1
+    fi
+
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir=${TARGET_DIR}/"${curr_hr}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
     if [ $? -ne 0 ]; then
       echo "Full backup failed."
       return 1
@@ -36,10 +56,19 @@ full_backup() {
 
 inc_backup() {
     local curr_hr=$1
-    local prev_hr=$((10#$curr_hr - 1))
+    local prev_hr
+    prev_hr=$(printf "%02d" $((10#$curr_hr - 1)))
+
     echo "Performing incremental backup for hour $curr_hr..."
-    mkdir -p "$TARGET_DIR/${curr_hr}"
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir=${TARGET_DIR}/"${curr_hr}" --strict --incremental-basedir="${TARGET_DIR}/$(printf "%02d" "$prev_hr")" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+
+    create_dir "$curr_hr"
+    if [ $? -ne 0 ]; then
+      echo "Full to create directories of $curr_hr"
+      return 1
+    fi
+
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/$prev_hr" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+
     if [ $? -ne 0 ]; then
       echo "Incremental backup failed."
       return 1
@@ -113,6 +142,12 @@ prepare_and_finalize() {
 
     if [ $? -eq 0 ]; then
       clean_old_backups "$curr_hr"
+
+      if [ $? -ne 0 ]; then
+        echo "Failed to delete backup of $curr_hr."
+        return 1
+      fi
+
     fi
     return 0
 }
@@ -143,10 +178,12 @@ push_to_s3() {
 }
 
 clean_old_backups() {
-  curr_hr=$((10#$1))
+  curr_hr="$1"
 
-  if [ $curr_hr -gt $ROLLING_WINDOW_HR ]; then
-    local file_name="$((curr_hr - ROLLING_WINDOW_HR))${COMPRESS_EXT}"
+  if [ $((10#$curr_hr)) -gt $ROLLING_WINDOW_HR ]; then
+    local old_hr
+    old_hr=$(printf "%02d" $((10#$curr_hr - $ROLLING_WINDOW_HR)))
+    local file_name="${old_hr}${COMPRESS_EXT}"
     echo "Deleting backup file $file_name..."
     s3cmd --config=/root/.s3cfg del s3://"${S3_BUCKET}${TARGET_DIR}/${file_name}"
   fi

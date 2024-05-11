@@ -6,7 +6,17 @@ services:
     env_file:
       - .env
     volumes:
-      - ./xbackup:/xbackup
-      - ../test/var/lib/mysql:/var/lib/mysql
+      - xbackup_volume:/xbackup
+      - /var/lib/mysql:/var/lib/mysql
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+    network_mode: host
+
     restart: on-failure
+
+
+volumes:
+  xbackup_volume:
+    external: true
+    name: ${XBACKUP_VOLUME}
 

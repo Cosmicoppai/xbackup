@@ -15,4 +15,4 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: cd xbackup && docker build . --file xbackup/Dockerfile --tag xbackup:$(date +%s)
+      run: cd xbackup && docker build . --file Dockerfile --tag xbackup:$(date +%s)

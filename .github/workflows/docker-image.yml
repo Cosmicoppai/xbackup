@@ -2,8 +2,8 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
+    paths:
+      - 'xbackup/**'
     branches: [ "main" ]
 
 jobs:

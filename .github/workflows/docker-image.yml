@@ -14,5 +14,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Change directory to xbackup
+      run: cd xbackup
     - name: Build the Docker image
       run: docker build . --file xbackup/Dockerfile --tag xbackup:$(date +%s)

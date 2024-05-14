@@ -1,17 +1,35 @@
 #!/usr/bin/env bash
 
-# $1 -> volume_name
-# $2 -> volume_path
+# $1 -> volume_path
 
-sudo apt update && sudo apt install -y apt-transport-https ca-certificates curl software-properties-common lsb-release
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-apt-cache policy docker-ce
-sudo apt install docker-ce -y
-sudo systemctl status docker
+run_cmd() {
+  echo "+ $*"
+  "$@"
+}
 
-docker volume create "$1" --opt type=none --opt device="$2" --opt o=bind
+if ! command -v docker &> /dev/null; then
+  echo "Docker is not installed. Proceeding with installation."
 
-export XBACKUP_VOLUME="$2"
+  run_cmd sudo apt update
+  run_cmd sudo apt install -y apt-transport-https ca-certificates curl software-properties-common lsb-release gnupg
 
-docker-compose up -d
+  run_cmd curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+  run_cmd sudo tee /etc/apt/sources.list.d/docker.list > /dev/null <<EOF
+deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable
+EOF
+
+  run_cmd sudo apt update
+  run_cmd sudo apt install docker-ce -y
+
+  run_cmd sudo systemctl start docker
+  run_cmd sudo systemctl enable docker
+else
+  echo "Docker is already installed. Skipping installation."
+fi
+
+run_cmd sudo systemctl is-active --quiet docker && echo "Docker is running" || echo "Docker is not running :("
+
+export XBACKUP_VOLUME="$1"
+
+run_cmd sudo docker compose up -d

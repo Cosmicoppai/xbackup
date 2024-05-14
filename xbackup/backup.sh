@@ -14,7 +14,7 @@ LATEST_BACKUP_TXT="latest_backup.txt"
 
 total_mem_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 # 40% of total memory for xtrabackup
-mem_for_xtrabackup_kb=$((total_mem_kb * 40 / 100))
+mem_for_xtrabackup_kb=$((total_mem_kb * 30 / 100))
 # KB to bytes for xtrabackup usage
 MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb * 1024))
 
@@ -56,18 +56,32 @@ full_backup() {
 
 inc_backup() {
     local curr_hr=$1
-    local prev_hr
-    prev_hr=$(printf "%02d" $((10#$curr_hr - 1)))
+    local last_successful_backup
+
+    if [ -f "${TARGET_DIR}/${LATEST_BACKUP_TXT}" ]; then
+      last_successful_backup=$(cat "${TARGET_DIR}/${LATEST_BACKUP_TXT}")
+      last_successful_backup_hr=${last_successful_backup%%_*}
+
+      if [ "$last_successful_backup_hr" -ge "$curr_hr" ]; then
+        echo "Last successful backup is ahead of or equal to the current hour. Performing full backup instead."
+        full_backup "$curr_hr"
+        return $?
+      fi
+    else
+      echo "No last successful backup found. Performing full backup instead."
+      full_backup "$curr_hr"
+      return $?
+    fi
 
     echo "Performing incremental backup for hour $curr_hr..."
 
     create_dir "$curr_hr"
     if [ $? -ne 0 ]; then
-      echo "Full to create directories of $curr_hr"
+      echo "Failed to create directories for $curr_hr"
       return 1
     fi
 
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/$prev_hr" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/${last_successful_backup}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
 
     if [ $? -ne 0 ]; then
       echo "Incremental backup failed."
@@ -75,7 +89,7 @@ inc_backup() {
     fi
 
     echo "Incremental backup complete."
-    return $?
+    return 0
 }
 
 prepare_and_finalize() {

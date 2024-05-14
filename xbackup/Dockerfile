@@ -22,4 +22,6 @@ COPY prepare.sh /usr/local/bin/prepare.sh
 RUN mkdir -p /xbackup/ /etc/cron.d /var/log && \
     chmod +x /usr/local/bin/backup.sh /usr/local/bin/prepare.sh /entrypoint.sh
 
+ENV PATH="/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin:$PATH"
+
 ENTRYPOINT ["/entrypoint.sh"]

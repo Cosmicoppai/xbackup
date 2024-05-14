@@ -1,9 +1,9 @@
 
 ---
 
-# xbackup
+# Xbackup
 
-`xbackup` is a Docker-based backup solution for MySQL databases, utilizing `xtrabackup` for creating backups and `s3cmd` for pushing these backups to Amazon S3. The setup includes incremental and full backups, managed by cron jobs, with configurable parameters for database credentials, S3 credentials, and backup schedules.
+`Xbackup` is a Docker-based backup solution for MySQL databases, utilizing `xtrabackup` for creating backups and `s3cmd` for pushing these backups to Amazon S3. The setup includes incremental and full backups, managed by cron jobs, with configurable parameters for database credentials, S3 credentials, and backup schedules.
 
 ## Features
 

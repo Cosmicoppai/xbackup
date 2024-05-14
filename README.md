@@ -72,7 +72,7 @@ CRON_TIME="0 */3 * * *"
 To restore a backup, download the backup files from S3 and use `xtrabackup` to apply logs and restore the database:
 
 ```bash
-    sudo docker exec xbackup /usr/local/bin/prepare.sh
+sudo docker exec xbackup /usr/local/bin/prepare.sh
 ```
 
 ## Contributing

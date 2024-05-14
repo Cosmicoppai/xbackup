@@ -1,4 +1,4 @@
 .gitignore
 .dockerignore
-Readme.MD
+../README.md
 .test.sh

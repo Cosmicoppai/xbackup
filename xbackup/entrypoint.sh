@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+check_mysql_data_dir() {
+  if [ ! -d "$DB_DATA_DIR" ]; then
+    echo "Error: MySQL data directory $DB_DATA_DIR does not exist."
+    exit 1
+  elif [ -z "$(ls -A "$DB_DATA_DIR")" ]; then
+    echo "Error: MySQL data directory $DB_DATA_DIR is empty."
+    exit 1
+  elif [ ! -f "$DB_DATA_DIR/ibdata1" ]; then
+    echo "Error: Critical file ibdata1 not found in MySQL data directory $DB_DATA_DIR."
+    exit 1
+  else
+    echo "MySQL data directory $DB_DATA_DIR is valid and contains the critical file."
+  fi
+}
+
+check_mysql_data_dir
+
 cat << EOF > /root/.s3cfg
 [default]
 access_key=$S3_ACCESS_KEY
@@ -17,7 +34,7 @@ EOF
 
 mkdir -p /var/log
 
-echo "${CRON_TIME} /usr/local/bin/backup.sh >> /var/log/cron.log 2>&1" > /etc/cron.d/backup-cron
+echo "${CRON_TIME} bash /usr/local/bin/backup.sh >> /var/log/cron.log 2>&1" > /etc/cron.d/backup-cron
 chmod 0644 /etc/cron.d/backup-cron
 crontab /etc/cron.d/backup-cron
 

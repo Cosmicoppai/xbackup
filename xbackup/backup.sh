@@ -5,6 +5,8 @@
 
 # It will take backup, compress, encrypt and push it
 
+export PATH="/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin:$PATH"
+
 TARGET_DIR="/xbackup"
 FINAL_DIR="$TARGET_DIR/final"
 CPUS=$(nproc)
@@ -18,7 +20,7 @@ mem_for_xtrabackup_kb=$((total_mem_kb * 30 / 100))
 # KB to bytes for xtrabackup usage
 MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb * 1024))
 
-echo "Starting backup with $CPUS CPU cores and $MEM_FOR_XBACKUP MB of memory allocated."
+echo "Starting backup with $CPUS CPU cores and $MEM_FOR_XBACKUP KB of memory allocated."
 
 
 create_dir() {
@@ -26,10 +28,10 @@ create_dir() {
 
   local backup_dir="$TARGET_DIR/${curr_hr}"
   if [ -d "$backup_dir" ]; then
-    echo "removing old backup of $curr_hr"
+    echo "Removing old backup of $curr_hr ($backup_dir)"
     rm -rf "${backup_dir:?backup directory path is unset or empty}/*"
   else
-    echo "creating temp dir for $curr_hr"
+    echo "Creating temp dir for $curr_hr"
     mkdir -p "$backup_dir"
   fi
 
@@ -40,18 +42,18 @@ full_backup() {
 
     create_dir "$curr_hr"
     if [ $? -ne 0 ]; then
-      echo "Full to create directories of $curr_hr"
+      echo "Failed to create directories for $curr_hr"
       return 1
     fi
 
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir=${TARGET_DIR}/"${curr_hr}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir=${TARGET_DIR}/"${curr_hr}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
     if [ $? -ne 0 ]; then
       echo "Full backup failed."
       return 1
     fi
 
     echo "Full backup complete."
-    return $?
+    return 0
 }
 
 inc_backup() {
@@ -81,7 +83,7 @@ inc_backup() {
       return 1
     fi
 
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --database="${DB_NAME}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/${last_successful_backup}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/${last_successful_backup}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
 
     if [ $? -ne 0 ]; then
       echo "Incremental backup failed."
@@ -99,11 +101,11 @@ prepare_and_finalize() {
     if [[ "$curr_hr" != "00" ]]; then
       if [[ "$curr_hr" == "01" ]]; then
         # if it's first inc backup, run the full backup with apply-log-only
-        echo "preparing base backup with --apply-log-only"
-        xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --parallel="$CPUS" --use-memory=$MEM_FOR_XBACKUP --strict
+        echo "Preparing base backup with --apply-log-only"
+        xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --strict
       else
         # apply logs of prev hour
-        echo "applying logs of prev hour"
+        echo "Applying logs of prev hour"
         local prev_inc_dir
         prev_inc_dir="${TARGET_DIR}/$(printf "%02d" "$prev_hr")"
         xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --incremental-dir="$prev_inc_dir" --parallel="$CPUS" --use-memory=$MEM_FOR_XBACKUP --strict
@@ -136,8 +138,8 @@ prepare_and_finalize() {
       cp -a "${TARGET_DIR}/${curr_hr}/." "${_inc_final_dir}/" # as we'll need this inc backup to apply logs during next hour preparation
 
       # applying curr incremental backup
-      echo "applying current incremental logs"
-      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="${_inc_final_dir}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
+      echo "Applying current incremental logs"
+      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="${_inc_final_dir}" --strict
     else
       xtrabackup --prepare --target-dir="$_final_dir" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
     fi
@@ -146,12 +148,12 @@ prepare_and_finalize() {
         return 1
     fi
 
-    echo "pushing full backup of $curr_hr"
+    echo "Pushing full backup of $curr_hr"
     push_to_s3 "$curr_hr" "$_final_dir" # "00" /xbackup/final/ (full_backup copy with logs applied)
 
     if [[ "$curr_hr" != "00" ]]; then
-    echo "pushing incremental backup of $curr_hr"
-    push_to_s3 "${curr_hr}_inc" "${_inc_final_dir}"  # curr_hr_inc /xbackup/final/ (inc backup copy)
+      echo "Pushing incremental backup of $curr_hr"
+      push_to_s3 "${curr_hr}_inc" "${_inc_final_dir}"  # curr_hr_inc /xbackup/final/ (inc backup copy)
     fi
 
     if [ $? -eq 0 ]; then
@@ -166,7 +168,6 @@ prepare_and_finalize() {
     return 0
 }
 
-
 push_to_s3() {
     local curr_hr=$1
     local _final_dir=$2
@@ -180,7 +181,7 @@ push_to_s3() {
     s3cmd --config=/root/.s3cfg put "${final_dest}" s3://"${S3_BUCKET}${final_dest}" --encrypt
     if [ $? -eq 0 ]; then
         echo "Upload complete."
-        echo "removing compressed and prepared backup"
+        echo "Removing compressed and prepared backup"
         rm -rf "$_final_dir"  # remove duplicate backup
         rm "$final_dest"  # remove compressed backup
         echo "$compress_backup_file_name" > "${TARGET_DIR}/${LATEST_BACKUP_TXT}"  # write it to a file, later we'll need it to fetch latest backup
@@ -203,7 +204,6 @@ clean_old_backups() {
   fi
 }
 
-
 perform_backup() {
     case "$1" in
         full)
@@ -216,14 +216,14 @@ perform_backup() {
             ;;
         *)
             hour=$(date +%H)
-              if [ "$hour" -eq "00" ]; then
-                  full_backup "$hour" || return
-                  folder_name="00"
-              else
-                  inc_backup "$hour" || return
-                  folder_name=$(printf "%02d" "$hour")
-              fi
-              prepare_and_finalize "$folder_name" || return
+            if [ "$hour" -eq "00" ]; then
+                full_backup "$hour" || return
+                folder_name="00"
+            else
+                inc_backup "$hour" || return
+                folder_name=$(printf "%02d" "$hour")
+            fi
+            prepare_and_finalize "$folder_name" || return
             ;;
     esac
 }

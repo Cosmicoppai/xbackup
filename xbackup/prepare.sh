@@ -7,6 +7,8 @@ TARGET_DIR="/xbackup/recovery"
 COMPRESS_EXT=".tar.zst"
 LATEST_BACKUP_TXT="latest_backup.txt"
 
+export PATH="/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin:$PATH"
+
 extract_backup() {
     local filename="$1"
     cd "$TARGET_DIR" || { echo "Failed to change directory to $TARGET_DIR"; exit 1; }

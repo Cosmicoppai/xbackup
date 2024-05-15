@@ -4,7 +4,7 @@
 #        ./xbackup.sh load
 #        ./xbackup.sh apply
 #        ./xbackup.sh logs
-#        ./xbackup.sh down
+#        ./xbackup.sh stop
 
 
 perform_backup() {
@@ -42,11 +42,11 @@ case "$1" in
     "logs")
         show_logs
         ;;
-    "down")
+    "stop")
         stop
         ;;
     *)
-        echo "Usage: $0 [start|load|apply|logs|down]"
+        echo "Usage: $0 [start|load|apply|logs|stop]"
         exit 1
         ;;
 esac

@@ -29,7 +29,7 @@ create_dir() {
   local backup_dir="$TARGET_DIR/${curr_hr}"
   if [ -d "$backup_dir" ]; then
     echo "Removing old backup of $curr_hr ($backup_dir)"
-    rm -rf "${backup_dir:?backup directory path is unset or empty}/*"
+    rm -rf "${backup_dir:?}/"* || { echo "Failed to remove old backup directory $backup_dir"; return 1; }
   else
     echo "Creating temp dir for $curr_hr"
     mkdir -p "$backup_dir"

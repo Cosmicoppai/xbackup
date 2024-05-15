@@ -5,7 +5,7 @@
 
 # It will take backup, compress, encrypt and push it
 
-export PATH="/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin:$PATH"
+. /etc/environments.sh
 
 TARGET_DIR="/xbackup"
 FINAL_DIR="$TARGET_DIR/final"

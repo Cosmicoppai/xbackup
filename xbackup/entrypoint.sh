@@ -51,4 +51,7 @@ echo "${CRON_TIME} bash /usr/local/bin/backup.sh >> /var/log/cron.log 2>&1" > /e
 chmod 0644 /etc/cron.d/backup-cron
 crontab /etc/cron.d/backup-cron
 
+export PATH="/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin:$PATH"
+printenv | awk -F= '{print "export " $1"=\""$2"\""}' >> /etc/environments.sh
+
 exec cron -f

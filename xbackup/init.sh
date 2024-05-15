@@ -33,7 +33,7 @@ if [ -f .env ]; then
   echo "Loading environment variables from .env file"
   set -o allexport
   source .env
-  set -o allexport
+  set +o allexport
 else
   echo ".env file not found!"
   exit 1
@@ -61,4 +61,4 @@ if [[ "${XBACKUP_VOLUME}" != /* ]]; then
   export XBACKUP_VOLUME=$(get_abs_path "${XBACKUP_VOLUME}")
 fi
 
-run_cmd sudo docker compose up -d --build
+run_cmd sudo docker compose up --build -d

@@ -4,17 +4,30 @@ check_mysql_data_dir() {
   if [ ! -d "$DB_DATA_DIR" ]; then
     echo "Error: MySQL data directory $DB_DATA_DIR does not exist."
     exit 1
-  elif [ -z "$(ls -A "$DB_DATA_DIR")" ]; then
+  fi
+
+  if [ -z "$(ls -A "$DB_DATA_DIR")" ]; then
     echo "Error: MySQL data directory $DB_DATA_DIR is empty."
     exit 1
-  elif [ ! -f "$DB_DATA_DIR/ibdata1" ]; then
+  fi
+
+  if [ ! -f "$DB_DATA_DIR/ibdata1" ]; then
     echo "Error: Critical file ibdata1 not found in MySQL data directory $DB_DATA_DIR."
     exit 1
-  else
-    echo "MySQL data directory $DB_DATA_DIR is valid and contains the critical file."
   fi
-}
 
+  if [ ! -f "$DB_DATA_DIR/ib_logfile0" ] && [ ! -f "$DB_DATA_DIR/ib_logfile1" ]; then
+      echo "Error: No InnoDB redo log files (ib_logfile0, ib_logfile1) found in MySQL data directory $DB_DATA_DIR."
+      exit 1
+  fi
+
+  if [ ! -d "$DB_DATA_DIR/mysql" ]; then
+      echo "Error: MySQL system database directory not found in MySQL data directory $DB_DATA_DIR."
+      exit 1
+  fi
+
+  echo "MySQL data directory $DB_DATA_DIR is valid and contains the critical file."
+}
 check_mysql_data_dir
 
 cat << EOF > /root/.s3cfg

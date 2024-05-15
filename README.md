@@ -14,9 +14,9 @@
 
 ## Prerequisites
 
-- Docker
-- Docker Compose
+- bash and sudo privilege
 - AWS S3 bucket and credentials
+- Rest will be installed at the runtime
 
 ## Installation
 
@@ -45,17 +45,9 @@
 3. **Build and Run the Docker Container:**
 
     ```bash
-    sudo ./init.sh /path/to/backup/volume
+   chmod +x ./xbackup.sh
+    sudo ./xbackup.sh start
     ```
-
-## Usage
-
-The `init.sh` script sets up Docker, installs necessary packages, and configures the backup environment. It will:
-
-1. Install Docker if it's not already installed.
-2. Configure the Docker repository and install Docker CE.
-3. Start and enable the Docker service.
-4. Launch the Docker Compose setup for `xbackup`.
 
 ### Backup Scheduling
 
@@ -72,7 +64,11 @@ CRON_TIME="0 */3 * * *"
 To restore a backup, download the backup files from S3 and use `xtrabackup` to apply logs and restore the database:
 
 ```bash
-sudo docker exec xbackup /usr/local/bin/prepare.sh
+./xbackup.sh load # it'll download the backup from s3
+# check everything is correct and correctly downloaded/decompressed
+
+# move the backup into the data dir
+./xbackup.sh apply 
 ```
 
 ## Contributing

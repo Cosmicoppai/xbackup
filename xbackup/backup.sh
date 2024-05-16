@@ -5,6 +5,20 @@
 
 # It will take backup, compress, encrypt and push it
 
+LOCKFILE="/var/run/backup.lock"
+
+if [ -e "$LOCKFILE" ]; then
+  echo "Backup script is already running."
+  exit 1
+fi
+
+touch "$LOCKFILE"
+
+cleanup() {
+  rm -f "$LOCKFILE"
+}
+trap cleanup EXIT
+
 . /etc/environments.sh
 
 TARGET_DIR="/xbackup"
@@ -22,7 +36,6 @@ MEM_FOR_XBACKUP=$((mem_for_xtrabackup_kb * 1024))
 
 echo "Starting backup with $CPUS CPU cores and $MEM_FOR_XBACKUP KB of memory allocated."
 
-
 create_dir() {
   local curr_hr=$1
 
@@ -34,7 +47,6 @@ create_dir() {
     echo "Creating temp dir for $curr_hr"
     mkdir -p "$backup_dir"
   fi
-
 }
 
 full_backup() {
@@ -62,7 +74,15 @@ inc_backup() {
 
     if [ -f "${TARGET_DIR}/${LATEST_BACKUP_TXT}" ]; then
       last_successful_backup=$(cat "${TARGET_DIR}/${LATEST_BACKUP_TXT}")
-      last_successful_backup_hr=${last_successful_backup%%_*}
+      last_successful_backup_hr=$(basename "$last_successful_backup" "${COMPRESS_EXT}")
+
+      if [[ "$last_successful_backup_hr" =~ ^([0-9]{2}) ]]; then
+        last_successful_backup_hr="${BASH_REMATCH[1]}"
+      else
+        echo "Last successful backup hour ($last_successful_backup_hr) is not a valid. Performing full backup instead."
+        full_backup "$curr_hr"
+        return $?
+      fi
 
       if [ "$last_successful_backup_hr" -ge "$curr_hr" ]; then
         echo "Last successful backup is ahead of or equal to the current hour. Performing full backup instead."
@@ -75,7 +95,7 @@ inc_backup() {
       return $?
     fi
 
-    echo "Performing incremental backup for hour $curr_hr..."
+    echo "Performing incremental backup for hour $curr_hr using inc-base dir as $last_successful_backup_hr ..."
 
     create_dir "$curr_hr"
     if [ $? -ne 0 ]; then
@@ -83,8 +103,7 @@ inc_backup() {
       return 1
     fi
 
-    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir="$backup_dir" --strict --incremental-basedir="${TARGET_DIR}/${last_successful_backup}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
-
+    xtrabackup --backup --host="${DB_HOST}" --user="${DB_USER}" --password="${DB_PASS}" --target-dir="$TARGET_DIR/$curr_hr" --strict --incremental-basedir="${TARGET_DIR}/${last_successful_backup_hr}" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
     if [ $? -ne 0 ]; then
       echo "Incremental backup failed."
       return 1
@@ -96,30 +115,49 @@ inc_backup() {
 
 prepare_and_finalize() {
     local curr_hr=$1
-    local prev_hr=$((10#$curr_hr - 1))
+    local base_backup_dir=""
+    local last_successful_inc_hr
+    local backup_dirs=()
 
-    if [[ "$curr_hr" != "00" ]]; then
-      if [[ "$curr_hr" == "01" ]]; then
-        # if it's first inc backup, run the full backup with apply-log-only
-        echo "Preparing base backup with --apply-log-only"
-        xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --strict
-      else
-        # apply logs of prev hour
-        echo "Applying logs of prev hour"
-        local prev_inc_dir
-        prev_inc_dir="${TARGET_DIR}/$(printf "%02d" "$prev_hr")"
-        xtrabackup --prepare --apply-log-only --target-dir="${TARGET_DIR}/00" --incremental-dir="$prev_inc_dir" --parallel="$CPUS" --use-memory=$MEM_FOR_XBACKUP --strict
-
-        if [ $? -eq 0 ]; then
-            echo "Applied log of prev hour, deleting incremental dir of prev hour $prev_hr"
-            rm -rf "$prev_inc_dir"
+    while IFS= read -r -d '' dir; do
+       dir_basename=$(basename "$dir")
+      if [[ "$dir_basename" =~ ^(0[0-9]|1[0-9]|2[0-3])$ ]]; then
+        if [[ -z "$base_backup_dir" ]]; then
+             base_backup_dir="${dir%/}"
         fi
+        if [[ "$(basename "$dir")" -lt "$curr_hr" ]]; then
+             last_successful_inc_hr=$(basename "$dir")
+        fi
+        backup_dirs+=("${dir%/}")
       fi
+    done < <(find "${TARGET_DIR}" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
 
-      if [ $? -ne 0 ]; then
-          echo "Failed to apply logs."
-          return 1
-      fi
+    if [[ -z "$base_backup_dir" ]]; then
+        echo "No base backup found. Cannot proceed with incremental backup."
+        return 1
+    fi
+
+    local base_hr=$(basename "$base_backup_dir")
+
+    if [[ "$curr_hr" != "$base_hr" ]]; then
+        if [[ "$last_successful_inc_hr" == "$base_hr" ]]; then
+            # If it's the first incremental backup, prepare the base backup with --apply-log-only
+            echo "Preparing base backup with --apply-log-only"
+            xtrabackup --prepare --apply-log-only --target-dir="${base_backup_dir}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+        else
+            # Apply logs of the previous hour
+            local prev_inc_dir="${TARGET_DIR}/${last_successful_inc_hr}"
+            echo "Applying logs of previous hour $last_successful_inc_hr"
+            xtrabackup --prepare --apply-log-only --target-dir="${base_backup_dir}" --incremental-dir="${prev_inc_dir}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
+
+            if [ $? -ne 0 ]; then
+                echo "Failed to apply logs of $prev_inc_dir."
+                return 1
+            fi
+
+            echo "Applied logs of $last_successful_inc_hr, deleting incremental dir $prev_inc_dir"
+            rm -rf "${prev_inc_dir}"
+        fi
     fi
 
     _final_dir="${FINAL_DIR}/${curr_hr}"
@@ -127,21 +165,21 @@ prepare_and_finalize() {
     local _inc_final_dir
 
     # copy the base backup data to final dir, so the further logs can be applied on og full backup
-    echo "Copying the base backup data to $_final_dir"
-    cp -a "${TARGET_DIR}/00/." "${_final_dir}/"
+    echo "Copying the base backup data $base_backup_dir to $_final_dir"
+    rsync -a -v "${base_backup_dir}/." "${_final_dir}/"
 
     # prepare accordingly for 1st and the rest hour
-    if [[ "$curr_hr" != "00" ]]; then
+    if [[ "$curr_hr" != "$base_hr" ]]; then
       echo "Copying current incremental backup"
       _inc_final_dir="${FINAL_DIR}/${curr_hr}_inc"
       mkdir -p "${_inc_final_dir}"
-      cp -a "${TARGET_DIR}/${curr_hr}/." "${_inc_final_dir}/" # as we'll need this inc backup to apply logs during next hour preparation
+      rsync -a -v "${TARGET_DIR}/${curr_hr}/." "${_inc_final_dir}/" # as we'll need this inc backup to apply logs during next hour preparation
 
       # applying curr incremental backup
       echo "Applying current incremental logs"
-      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="${_inc_final_dir}" --strict
+      xtrabackup --prepare --target-dir="$_final_dir" --incremental-dir="${_inc_final_dir}" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
     else
-      xtrabackup --prepare --target-dir="$_final_dir" --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP --strict
+      xtrabackup --prepare --target-dir="$_final_dir" --strict --parallel=$CPUS --use-memory=$MEM_FOR_XBACKUP
     fi
     if [ $? -ne 0 ]; then
         echo "Failed to prepare final backup."
@@ -151,7 +189,7 @@ prepare_and_finalize() {
     echo "Pushing full backup of $curr_hr"
     push_to_s3 "$curr_hr" "$_final_dir" # "00" /xbackup/final/ (full_backup copy with logs applied)
 
-    if [[ "$curr_hr" != "00" ]]; then
+    if [[ "$curr_hr" != "$base_hr" ]]; then
       echo "Pushing incremental backup of $curr_hr"
       push_to_s3 "${curr_hr}_inc" "${_inc_final_dir}"  # curr_hr_inc /xbackup/final/ (inc backup copy)
     fi
@@ -193,16 +231,32 @@ push_to_s3() {
 }
 
 clean_old_backups() {
-  curr_hr="$1"
+    echo "Removing old backups"
 
-  if [ $((10#$curr_hr)) -gt $ROLLING_WINDOW_HR ]; then
-    local old_hr
-    old_hr=$(printf "%02d" $((10#$curr_hr - $ROLLING_WINDOW_HR)))
-    local file_name="${old_hr}${COMPRESS_EXT}"
-    echo "Deleting backup file $file_name..."
-    s3cmd --config=/root/.s3cfg del s3://"${S3_BUCKET}${TARGET_DIR}/${file_name}"
-  fi
+    local s3_backup_list
+    local backup_files=()
+
+    s3_backup_list=$(s3cmd --config=/root/.s3cfg ls s3://"${S3_BUCKET}${TARGET_DIR}/" | awk '{print $4}')
+
+    while IFS= read -r file; do
+        if [[ ! "$file" =~ _inc ]]; then
+            backup_files+=("$file")
+        fi
+    done <<< "$s3_backup_list"
+
+    mapfile -t backup_files < <(echo "$s3_backup_list" | grep -v '_inc')
+    mapfile -t sorted_backup_files < <(printf "%s\n" "${backup_files[@]}" | sort -t'/' -k4)
+
+    if [[ ${#sorted_backup_files[@]} -gt $ROLLING_WINDOW_HR ]]; then
+        local cutoff_index=$(( ${#sorted_backup_files[@]} - $ROLLING_WINDOW_HR ))
+        for ((i=1; i < cutoff_index; i++)); do
+            local old_backup_file=${sorted_backup_files[$i]}
+            echo "Deleting backup file $old_backup_file..."
+            s3cmd --config=/root/.s3cfg del "$old_backup_file"
+        done
+    fi
 }
+
 
 perform_backup() {
     case "$1" in

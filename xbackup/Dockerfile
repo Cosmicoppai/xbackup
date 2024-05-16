@@ -6,7 +6,7 @@ SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y wget lsb-release curl cron s3cmd perl libdbd-mysql-perl gnupg zstd && \
+    apt-get install -y wget lsb-release curl cron s3cmd perl libdbd-mysql-perl gnupg zstd rsync && \
     wget https://downloads.percona.com/downloads/Percona-XtraBackup-8.0/Percona-XtraBackup-8.0.35-30/binary/tarball/percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17.tar.gz && \
     tar -xvf percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17.tar.gz && \
     chmod +x /percona-xtrabackup-8.0.35-30-Linux-x86_64.glibc2.17/bin/xtrabackup && \

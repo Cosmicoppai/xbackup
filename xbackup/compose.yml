@@ -8,7 +8,6 @@ services:
     volumes:
       - ${XBACKUP_VOLUME}:/xbackup
       - ${DB_DATA_DIR}:${DB_DATA_DIR}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     restart: on-failure
 

@@ -231,18 +231,9 @@ clean_old_backups() {
     echo "Removing old backups"
 
     local s3_backup_list
-    local backup_files=()
 
     s3_backup_list=$(s3cmd --config=/root/.s3cfg ls s3://"${S3_BUCKET}${TARGET_DIR}/" | awk '{print $4}')
-
-    while IFS= read -r file; do
-        if [[ ! "$file" =~ _inc ]]; then
-            backup_files+=("$file")
-        fi
-    done <<< "$s3_backup_list"
-
-    mapfile -t backup_files < <(echo "$s3_backup_list" | grep -v '_inc')
-    mapfile -t sorted_backup_files < <(printf "%s\n" "${backup_files[@]}" | sort -t'/' -k4)
+    mapfile -t sorted_backup_files < <(echo "$s3_backup_list" | grep -v '_inc' | awk -F'/' '{print $NF, $0}' | sort | awk '{print $2}')
 
     if [[ ${#sorted_backup_files[@]} -gt $ROLLING_WINDOW_HR ]]; then
         local cutoff_index=$(( ${#sorted_backup_files[@]} - $ROLLING_WINDOW_HR ))

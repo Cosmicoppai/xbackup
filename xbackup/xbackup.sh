@@ -13,16 +13,34 @@ perform_backup() {
 }
 
 prepare_backup() {
-    sudo docker exec xbackup /usr/local/bin/prepare.sh
+  sudo docker exec xbackup-percona-xtrabackup-1 /usr/local/bin/prepare.sh
 }
 
 apply_backup() {
-  sudo chmod _x ./apply.sh
-  sudo ./apply.sh
+  chmod +x ./load_env.sh && . ./load_env.sh
+  sudo systemctl stop mysql && sudo docker exec xbackup-percona-xtrabackup-1 /usr/local/bin/apply.sh && \
+  chown -R mysql:mysql "$DB_DATA_DIR" && \
+  find "$DB_DATA_DIR" -type d -exec chmod 750 {} \; && \
+  sudo systemctl start mysql
+
+  for i in {1..10}; do
+    if sudo systemctl is-active --quiet mysql; then
+        echo "MySQL is active. Removing old data directory..."
+        sudo docker exec xbackup-percona-xtrabackup-1 rm -rf /xbackup/tmp/  # old mysql data
+        sudo docker exec xbackup-percona-xtrabackup-1 rm -rf /xbackup/recovery  # data downloaded from s3
+        echo "Old data directory removed successfully."
+        break
+    else
+        echo "MySQL not active, sleeping for $i seconds"
+        sleep "$i"
+    fi
+  done
+
+  echo "><"
 }
 
 show_logs() {
-  sudo docker compose logs
+  sudo docker logs -f xbackup-percona-xtrabackup-1
 }
 
 stop() {
@@ -50,4 +68,3 @@ case "$1" in
         exit 1
         ;;
 esac
-

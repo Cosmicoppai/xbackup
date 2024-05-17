@@ -4,8 +4,7 @@
 
 . /etc/environments.sh
 
-S3_TARGET_DIR="xbackup"
-DEST_DIR="/xbackup"
+S3_TARGET_DIR="/xbackup"
 TARGET_DIR="/xbackup/recovery"
 COMPRESS_EXT=".tar.zst"
 LATEST_BACKUP_TXT="latest_backup.txt"
@@ -13,7 +12,7 @@ LATEST_BACKUP_TXT="latest_backup.txt"
 extract_backup() {
     local filename="$1"
 
-    cd "$DEST_DIR" || { echo "Failed to change directory to $DEST_DIR"; exit 1; }
+    cd "$S3_TARGET_DIR" || { echo "Failed to change directory to $S3_TARGET_DIR"; exit 1; }
 
     if [ -z "$filename" ]; then  # if filename arg is not there, read from the latest_backup.txt
         if [ ! -f "$LATEST_BACKUP_TXT" ]; then
@@ -21,7 +20,7 @@ extract_backup() {
             exit 1
         fi
 
-        last_successful_backup=$(cat "${DEST_DIR}/${LATEST_BACKUP_TXT}")
+        last_successful_backup=$(cat "${LATEST_BACKUP_TXT}")
         filename=$(basename "$last_successful_backup" "${COMPRESS_EXT}")
         if [[ "$filename" =~ ^([0-9]{2}) ]]; then
             filename="${BASH_REMATCH[1]}"
@@ -34,7 +33,7 @@ extract_backup() {
 
     mkdir -p "$TARGET_DIR" || { echo "Failed to create target directory"; exit 1; }
 
-    s3cmd get "s3://$S3_BUCKET/$S3_TARGET_DIR/$filename" "$TARGET_DIR/" || { echo "Failed to download from S3"; exit 1; }
+    s3cmd get "s3://${S3_BUCKET}${S3_TARGET_DIR}/$filename" "$TARGET_DIR/" || { echo "Failed to download from S3"; exit 1; }
 
     local downloaded_file="$TARGET_DIR/$filename"
     if [ ! -f "$downloaded_file" ]; then

@@ -212,16 +212,13 @@ push_to_s3() {
     local compress_backup_file_name="${curr_hr}${COMPRESS_EXT}"  # curr_hr.tar.zst || curr_hr_inc.tar.zst
     local final_dest="${TARGET_DIR}/${compress_backup_file_name}"  # /xbackup/curr_hr.tar.zst || /xbackup/curr_hr_inc.tar.zst
 
-    echo "Compressing backup..."
-    tar -cf - -C "${_final_dir}" . | pzstd -o "${final_dest}" -p"${CPUS}" || { echo "Compression failed"; exit 1; }
+    echo "Compressing and uploading backup..."
+    tar -cf - -C "${_final_dir}" . | pzstd - -p"${CPUS}" | s3cmd --config=/root/.s3cfg put - s3://"${S3_BUCKET}${final_dest}"
 
-    echo "Uploading backup to S3 of $curr_hr hr ... with name $compress_backup_file_name"
-    s3cmd --config=/root/.s3cfg put "${final_dest}" s3://"${S3_BUCKET}${final_dest}" --encrypt
     if [ $? -eq 0 ]; then
         echo "Upload complete."
-        echo "Removing compressed and prepared backup"
+        echo "Removing prepared backup"
         rm -rf "$_final_dir"  # remove duplicate backup
-        rm "$final_dest"  # remove compressed backup
         echo "$compress_backup_file_name" > "${TARGET_DIR}/${LATEST_BACKUP_TXT}"  # write it to a file, later we'll need it to fetch latest backup
     else
         echo "Upload failed."

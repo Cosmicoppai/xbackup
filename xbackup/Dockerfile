@@ -18,8 +18,9 @@ RUN apt-get update && \
 COPY entrypoint.sh /entrypoint.sh
 COPY backup.sh /usr/local/bin/backup.sh
 COPY prepare.sh /usr/local/bin/prepare.sh
+COPY apply.sh /usr/local/bin/apply.sh
 
 RUN mkdir -p /xbackup/ /etc/cron.d /var/log && \
-    chmod +x /usr/local/bin/backup.sh /usr/local/bin/prepare.sh /entrypoint.sh
+    chmod +x /usr/local/bin/backup.sh /usr/local/bin/prepare.sh /usr/local/bin/apply.sh /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
